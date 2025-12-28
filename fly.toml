@@ -5,6 +5,7 @@ app = "whatsappapi-f1u3za"
 
 [env]
   PORT = "3000"
+  LOVABLE_WEBHOOK_URL = "https://npowdgatpuqhgualeshq.supabase.co/functions/v1/whatsapp-webhook"
 
 [[services]]
   internal_port = 3000

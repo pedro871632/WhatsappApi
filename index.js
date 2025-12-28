@@ -66,6 +66,11 @@ function createSession(sessionId) {
   session.client.on('message', async (msg) => {
     if (msg.from.includes('@g.us')) return;
     
+    if (!LOVABLE_WEBHOOK_URL) {
+      console.log(`⚠️ [${sessionId}] Webhook não configurado, ignorando mensagem`);
+      return;
+    }
+    
     try {
       const response = await fetch(LOVABLE_WEBHOOK_URL, {
         method: 'POST',
