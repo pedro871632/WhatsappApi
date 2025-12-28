@@ -1,28 +1,50 @@
+# Use Node.js 18 as base image
 FROM node:18-slim
 
-# Instala o Chromium e as dependências necessárias
+# Install system dependencies for Puppeteer
 RUN apt-get update && apt-get install -y \
-    chromium \
-    fonts-liberation \
+    libgconf-2-4 \
+    libxss1 \
+    libxtst6 \
+    libxrandr2 \
     libasound2 \
-    libnss3 \
+    libpangocairo-1.0-0 \
     libatk1.0-0 \
+    libcairo-gobject2 \
     libgtk-3-0 \
-    libgbm-dev \
-    ca-certificates \
+    libgdk-pixbuf2.0-0 \
+    libgbm1 \
+    libxcomposite1 \
+    libxcursor1 \
+    libxdamage1 \
+    libxi6 \
+    libxtst6 \
+    libnss3 \
+    libcups2 \
+    libxrandr2 \
+    libgconf-2-4 \
+    libxss1 \
+    libappindicator1 \
+    fonts-liberation \
+    lsb-release \
+    xdg-utils \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Informa ao Puppeteer para usar o Chromium instalado pelo sistema
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-
+# Set working directory
 WORKDIR /app
 
+# Copy package files
 COPY package*.json ./
+
+# Install Node.js dependencies
 RUN npm install
 
+# Copy application code
 COPY . .
 
+# Expose port
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+# Start the application
+CMD ["npm", "start"]
