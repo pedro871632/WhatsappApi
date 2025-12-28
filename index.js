@@ -12,6 +12,13 @@ app.use(express.json());
 
 const LOVABLE_WEBHOOK_URL = "https://npowdgatpuqhgualeshq.supabase.co/functions/v1/whatsapp-webhook";
 
+// Limpa todos os dados de autenticação ao iniciar o servidor
+const authBasePath = '.wwebjs_auth';
+if (fs.existsSync(authBasePath)) {
+  fs.rmSync(authBasePath, { recursive: true, force: true });
+  console.log('🧹 Todos os dados de autenticação foram removidos.');
+}
+
 // Armazena múltiplos clientes por sessionId
 const sessions = new Map();
 
