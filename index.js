@@ -4,6 +4,7 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 const express = require('express');
 const cors = require('cors');
+const fs = require('fs');
 
 const app = express();
 app.use(cors());
@@ -25,6 +26,12 @@ function createSession(sessionId) {
     qrCode: null,
     info: null
   };
+
+  // Remove dados de autenticação anteriores para forçar novo QR
+  const authPath = `.wwebjs_auth/${sessionId}`;
+  if (fs.existsSync(authPath)) {
+    fs.rmSync(authPath, { recursive: true, force: true });
+  }
 
   session.client = new Client({
     authStrategy: new LocalAuth({ clientId: sessionId }),
