@@ -1,50 +1,29 @@
-# Use Node.js 18 as base image
+# Use Node.js 18 slim como base
 FROM node:18-slim
 
-# Install system dependencies for Puppeteer
+# Instala o Chromium e fontes mínimas necessárias
+# No Debian (base da imagem slim), o pacote 'chromium' já instala as dependências essenciais
 RUN apt-get update && apt-get install -y \
-    libgconf-2-4 \
-    libxss1 \
-    libxtst6 \
-    libxrandr2 \
-    libasound2 \
-    libpangocairo-1.0-0 \
-    libatk1.0-0 \
-    libcairo-gobject2 \
-    libgtk-3-0 \
-    libgdk-pixbuf2.0-0 \
-    libgbm1 \
-    libxcomposite1 \
-    libxcursor1 \
-    libxdamage1 \
-    libxi6 \
-    libxtst6 \
-    libnss3 \
-    libcups2 \
-    libxrandr2 \
-    libgconf-2-4 \
-    libxss1 \
-    libappindicator1 \
-    fonts-liberation \
-    lsb-release \
-    xdg-utils \
-    wget \
+    chromium \
+    fonts-freefont-ttf \
+    --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
+# Pula o download do Chromium interno do Puppeteer (economiza ~300MB de imagem)
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+# Define o caminho exato onde o 'apt-get install chromium' coloca o binário
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
 WORKDIR /app
 
-# Copy package files
+# Copia apenas o necessário para instalar dependências primeiro (aproveita cache de camadas)
 COPY package*.json ./
+RUN npm install --only=production
 
-# Install Node.js dependencies
-RUN npm install
-
-# Copy application code
+# Copia o restante do código
 COPY . .
 
-# Expose port
 EXPOSE 3000
 
-# Start the application
-CMD ["npm", "start"]
+# Executa o node diretamente (consome menos RAM que o 'npm start')
+CMD ["node", "server.js"]
