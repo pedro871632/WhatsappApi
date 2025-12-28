@@ -1,4 +1,4 @@
-// server.js - Multi-conexão WhatsApp
+// server.js - Multi-conexão WhatsApp (Remoção automática da memória)
 
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
@@ -28,7 +28,12 @@ function createSession(sessionId) {
 
   session.client = new Client({
     authStrategy: new LocalAuth({ clientId: sessionId }),
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1018919651-alpha.html',
+    },
     puppeteer: {
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
       headless: true,
       args: [
         '--no-sandbox',
@@ -36,14 +41,13 @@ function createSession(sessionId) {
         '--disable-dev-shm-usage',
         '--disable-gpu',
         '--no-first-run',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-features=TranslateUI',
-        '--disable-ipc-flooding-protection'
+        '--no-zygote',
+        '--single-process'
       ]
     }
   });
+
+  // --- Eventos do Cliente ---
 
   session.client.on('qr', async (qr) => {
     console.log(`📱 [${sessionId}] QR Code recebido`);
@@ -57,19 +61,26 @@ function createSession(sessionId) {
     session.info = session.client.info;
   });
 
-  session.client.on('disconnected', () => {
-    console.log(`❌ [${sessionId}] Desconectado`);
-    session.isReady = false;
-    session.info = null;
+  // Alteração solicitada: Remove da memória ao desconectar
+  session.client.on('disconnected', async (reason) => {
+    console.log(`❌ [${sessionId}] Desconectado:`, reason);
+    
+    try {
+      // Encerra o processo do navegador
+      await session.client.destroy();
+    } catch (e) {
+      console.error(`Erro ao destruir cliente [${sessionId}]:`, e.message);
+    }
+    
+    // Remove do Map de sessões
+    sessions.delete(sessionId);
+    console.log(`🗑️ [${sessionId}] Sessão removida da memória.`);
   });
 
   session.client.on('message', async (msg) => {
     if (msg.from.includes('@g.us')) return;
     
-    if (!LOVABLE_WEBHOOK_URL) {
-      console.log(`⚠️ [${sessionId}] Webhook não configurado, ignorando mensagem`);
-      return;
-    }
+    if (!LOVABLE_WEBHOOK_URL) return;
     
     try {
       const response = await fetch(LOVABLE_WEBHOOK_URL, {
@@ -87,32 +98,34 @@ function createSession(sessionId) {
       });
       
       const result = await response.json();
-      if (result.reply) await msg.reply(result.reply);
+      if (result && result.reply) {
+        await msg.reply(result.reply);
+      }
     } catch (error) {
-      console.error(`❌ [${sessionId}] Webhook error:`, error.message);
+      console.error(`❌ [${sessionId}] Erro no Webhook:`, error.message);
     }
   });
 
   session.client.initialize().catch(error => {
-    console.error(`❌ [${sessionId}] Falha ao inicializar cliente:`, error.message);
+    console.error(`❌ [${sessionId}] Falha ao inicializar:`, error.message);
+    sessions.delete(sessionId);
   });
+
   sessions.set(sessionId, session);
   return session;
 }
 
-// ==================== ROTAS ====================
+// ==================== ROTAS API ====================
 
-// Criar/obter sessão
 app.post('/session/:sessionId/start', (req, res) => {
   const { sessionId } = req.params;
   createSession(sessionId);
-  res.json({ success: true, message: `Sessão ${sessionId} iniciada` });
+  res.json({ success: true, message: `Sessão ${sessionId} inicializando...` });
 });
 
-// Status de uma sessão
 app.get('/session/:sessionId/status', (req, res) => {
   const session = sessions.get(req.params.sessionId);
-  if (!session) return res.status(404).json({ error: 'Sessão não encontrada' });
+  if (!session) return res.status(404).json({ error: 'Sessão não ativa ou desconectada' });
   
   res.json({
     ready: session.isReady,
@@ -121,7 +134,6 @@ app.get('/session/:sessionId/status', (req, res) => {
   });
 });
 
-// QR Code de uma sessão
 app.get('/session/:sessionId/qr', (req, res) => {
   const session = sessions.get(req.params.sessionId);
   if (!session) return res.status(404).json({ error: 'Sessão não encontrada' });
@@ -130,7 +142,6 @@ app.get('/session/:sessionId/qr', (req, res) => {
   res.json({ status: 'waiting' });
 });
 
-// Enviar mensagem
 app.post('/session/:sessionId/send', async (req, res) => {
   const session = sessions.get(req.params.sessionId);
   if (!session?.isReady) return res.status(503).json({ error: 'Não conectado' });
@@ -146,7 +157,6 @@ app.post('/session/:sessionId/send', async (req, res) => {
   }
 });
 
-// Listar todas as sessões
 app.get('/sessions', (req, res) => {
   const list = [];
   sessions.forEach((session, id) => {
@@ -155,7 +165,6 @@ app.get('/sessions', (req, res) => {
   res.json(list);
 });
 
-// Encerrar sessão
 app.delete('/session/:sessionId', async (req, res) => {
   const session = sessions.get(req.params.sessionId);
   if (session) {
@@ -166,4 +175,4 @@ app.delete('/session/:sessionId', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Multi-session server na porta ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server on port ${PORT}`));
