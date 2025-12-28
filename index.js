@@ -30,7 +30,18 @@ function createSession(sessionId) {
     authStrategy: new LocalAuth({ clientId: sessionId }),
     puppeteer: {
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection'
+      ]
     }
   });
 
@@ -77,7 +88,9 @@ function createSession(sessionId) {
     }
   });
 
-  session.client.initialize();
+  session.client.initialize().catch(error => {
+    console.error(`❌ [${sessionId}] Falha ao inicializar cliente:`, error.message);
+  });
   sessions.set(sessionId, session);
   return session;
 }
@@ -148,4 +161,4 @@ app.delete('/session/:sessionId', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Multi-session server na porta ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Multi-session server na porta ${PORT}`));
