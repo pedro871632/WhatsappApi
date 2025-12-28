@@ -9,7 +9,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const LOVABLE_WEBHOOK_URL = process.env.LOVABLE_WEBHOOK_URL;
+const LOVABLE_WEBHOOK_URL = "https://npowdgatpuqhgualeshq.supabase.co/functions/v1/whatsapp-webhook";
 
 // Armazena múltiplos clientes por sessionId
 const sessions = new Map();
