@@ -26,4 +26,4 @@ COPY . .
 EXPOSE 3000
 
 # Executa o node diretamente (consome menos RAM que o 'npm start')
-CMD ["node", "server.js"]
+CMD ["node", "index.js"]
