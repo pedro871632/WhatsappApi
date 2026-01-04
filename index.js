@@ -1,4 +1,4 @@
-// server.js - Multi-conexão WhatsApp (Remoção automática da memória)
+// server.js - Multi-conexão WhatsApp com suporte a áudio
 
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
@@ -10,21 +10,92 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ==================== CONFIGURAÇÃO ====================
+
 const LOVABLE_WEBHOOK_URL = "https://npowdgatpuqhgualeshq.supabase.co/functions/v1/whatsapp-webhook";
 
-// Limpa todos os dados de autenticação ao iniciar o servidor
+// Limpa todos os dados de autenticação ao iniciar
 const authBasePath = '.wwebjs_auth';
 if (fs.existsSync(authBasePath)) {
   fs.rmSync(authBasePath, { recursive: true, force: true });
-  console.log('🧹 Todos os dados de autenticação foram removidos.');
+  console.log('🧹 Dados de autenticação removidos.');
 }
 
-// Armazena múltiplos clientes por sessionId
+// ==================== GERENCIADOR DE SESSÕES ====================
+
 const sessions = new Map();
+
+async function processIncomingMessage(sessionId, msg) {
+  // Ignora grupos
+  if (msg.from.includes('@g.us')) return;
+  if (!LOVABLE_WEBHOOK_URL) return;
+
+  const fromNumber = msg.from.replace('@c.us', '');
+  
+  // Prepara dados base da mensagem
+  let messageData = {
+    from: fromNumber,
+    message: msg.body || '',
+    timestamp: new Date().toISOString(),
+    messageType: 'text'
+  };
+
+  // Processa áudio (ptt = push-to-talk / audio = áudio normal)
+  if (msg.type === 'ptt' || msg.type === 'audio') {
+    try {
+      console.log(`🎤 [${sessionId}] Baixando áudio de ${fromNumber}...`);
+      const media = await msg.downloadMedia();
+      
+      if (media?.data) {
+        messageData = {
+          from: fromNumber,
+          message: '',
+          timestamp: new Date().toISOString(),
+          messageType: 'audio',
+          audioData: media.data,
+          mimeType: media.mimetype || 'audio/ogg'
+        };
+        console.log(`✅ [${sessionId}] Áudio: ${media.mimetype}, ${Math.round(media.data.length / 1024)}KB`);
+      } else {
+        console.error(`❌ [${sessionId}] Falha ao baixar áudio`);
+        messageData.message = '[Áudio não processado]';
+      }
+    } catch (error) {
+      console.error(`❌ [${sessionId}] Erro no áudio:`, error.message);
+      messageData.message = '[Áudio não processado]';
+    }
+  }
+
+  // Envia para webhook
+  try {
+    const response = await fetch(LOVABLE_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'incoming_message',
+        sessionId,
+        data: messageData
+      })
+    });
+    
+    const result = await response.json();
+    if (result?.reply) {
+      await msg.reply(result.reply);
+    }
+  } catch (error) {
+    console.error(`❌ [${sessionId}] Erro webhook:`, error.message);
+  }
+}
 
 function createSession(sessionId) {
   if (sessions.has(sessionId)) {
     return sessions.get(sessionId);
+  }
+
+  // Limpa auth anterior
+  const authPath = `.wwebjs_auth/${sessionId}`;
+  if (fs.existsSync(authPath)) {
+    fs.rmSync(authPath, { recursive: true, force: true });
   }
 
   const session = {
@@ -33,12 +104,6 @@ function createSession(sessionId) {
     qrCode: null,
     info: null
   };
-
-  // Remove dados de autenticação anteriores para forçar novo QR
-  const authPath = `.wwebjs_auth/${sessionId}`;
-  if (fs.existsSync(authPath)) {
-    fs.rmSync(authPath, { recursive: true, force: true });
-  }
 
   session.client = new Client({
     authStrategy: new LocalAuth({ clientId: sessionId }),
@@ -61,8 +126,7 @@ function createSession(sessionId) {
     }
   });
 
-  // --- Eventos do Cliente ---
-
+  // Eventos
   session.client.on('qr', async (qr) => {
     console.log(`📱 [${sessionId}] QR Code recebido`);
     session.qrCode = await qrcode.toDataURL(qr);
@@ -75,53 +139,21 @@ function createSession(sessionId) {
     session.info = session.client.info;
   });
 
-  // Alteração solicitada: Remove da memória ao desconectar
   session.client.on('disconnected', async (reason) => {
     console.log(`❌ [${sessionId}] Desconectado:`, reason);
-    
     try {
-      // Encerra o processo do navegador
       await session.client.destroy();
     } catch (e) {
-      console.error(`Erro ao destruir cliente [${sessionId}]:`, e.message);
+      console.error(`Erro ao destruir [${sessionId}]:`, e.message);
     }
-    
-    // Remove do Map de sessões
     sessions.delete(sessionId);
-    console.log(`🗑️ [${sessionId}] Sessão removida da memória.`);
+    console.log(`🗑️ [${sessionId}] Removido da memória`);
   });
 
-  session.client.on('message', async (msg) => {
-    if (msg.from.includes('@g.us')) return;
-    
-    if (!LOVABLE_WEBHOOK_URL) return;
-    
-    try {
-      const response = await fetch(LOVABLE_WEBHOOK_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'incoming_message',
-          sessionId,
-          data: {
-            from: msg.from.replace('@c.us', ''),
-            message: msg.body,
-            timestamp: new Date().toISOString()
-          }
-        })
-      });
-      
-      const result = await response.json();
-      if (result && result.reply) {
-        await msg.reply(result.reply);
-      }
-    } catch (error) {
-      console.error(`❌ [${sessionId}] Erro no Webhook:`, error.message);
-    }
-  });
+  session.client.on('message', (msg) => processIncomingMessage(sessionId, msg));
 
   session.client.initialize().catch(error => {
-    console.error(`❌ [${sessionId}] Falha ao inicializar:`, error.message);
+    console.error(`❌ [${sessionId}] Falha init:`, error.message);
     sessions.delete(sessionId);
   });
 
@@ -132,15 +164,13 @@ function createSession(sessionId) {
 // ==================== ROTAS API ====================
 
 app.post('/session/:sessionId/start', (req, res) => {
-  const { sessionId } = req.params;
-  createSession(sessionId);
-  res.json({ success: true, message: `Sessão ${sessionId} inicializando...` });
+  createSession(req.params.sessionId);
+  res.json({ success: true, message: `Sessão inicializando...` });
 });
 
 app.get('/session/:sessionId/status', (req, res) => {
   const session = sessions.get(req.params.sessionId);
-  if (!session) return res.status(404).json({ error: 'Sessão não ativa ou desconectada' });
-  
+  if (!session) return res.status(404).json({ error: 'Sessão não ativa' });
   res.json({
     ready: session.isReady,
     hasQrCode: !!session.qrCode,
@@ -172,10 +202,11 @@ app.post('/session/:sessionId/send', async (req, res) => {
 });
 
 app.get('/sessions', (req, res) => {
-  const list = [];
-  sessions.forEach((session, id) => {
-    list.push({ id, ready: session.isReady, number: session.info?.wid?.user });
-  });
+  const list = Array.from(sessions.entries()).map(([id, s]) => ({
+    id,
+    ready: s.isReady,
+    number: s.info?.wid?.user
+  }));
   res.json(list);
 });
 
@@ -188,5 +219,7 @@ app.delete('/session/:sessionId', async (req, res) => {
   res.json({ success: true });
 });
 
+// ==================== INICIALIZAÇÃO ====================
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server on port ${PORT}`))
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server on port ${PORT}`));
